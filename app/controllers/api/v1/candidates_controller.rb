@@ -51,13 +51,24 @@ module Api
       def move_stage
         authorize @candidate, :move_stage?
         new_stage = @job.current_stages.find(params[:stage_id])
+        expected_lock_version = params[:lock_version].to_i
+
+        if @candidate.lock_version != expected_lock_version
+          render json: {
+            error: "Conflict",
+            message: "Candidate was modified by another user. Please refresh.",
+            current_lock_version: @candidate.lock_version
+          }, status: :conflict
+          return
+        end
 
         @candidate.move_to_stage!(new_stage, moved_by: current_user)
         render json: @candidate.reload, serializer: CandidateDetailSerializer
       rescue ActiveRecord::StaleObjectError
         render json: {
           error: "Conflict",
-          message: "Candidate was modified by another user. Please refresh."
+          message: "Candidate was modified by another user. Please refresh.",
+          current_lock_version: @candidate.reload.lock_version
         }, status: :conflict
       end
 
@@ -66,14 +77,23 @@ module Api
         new_stage = @job.current_stages.find(params[:stage_id])
         candidate_ids = params[:candidate_ids]
 
+        # Only allow IDs that belong to this job AND this team
+        valid_ids = @job.candidates.where(team: @current_team, id: candidate_ids).pluck(:id)
+
+        if valid_ids.empty?
+          render_error "No valid candidates found", status: :unprocessable_entity
+          return
+        end
+
         BatchMoveCandidatesJob.perform_later(
-          candidate_ids: candidate_ids,
+          candidate_ids: valid_ids,
           stage_id: new_stage.id,
           moved_by_id: current_user.id,
-          team_id: @current_team.id
+          team_id: @current_team.id,
+          job_id: @job.id
         )
 
-        render json: { message: "Batch move queued", candidate_count: candidate_ids.size }, status: :accepted
+        render json: { message: "Batch move queued", candidate_count: valid_ids.size }, status: :accepted
       end
 
       private

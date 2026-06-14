@@ -40,5 +40,37 @@ RSpec.describe PipelineUpgradeService, type: :service do
       new_stage = job.current_stages.find_by(position: 0)
       expect(new_stage.name).to eq("New Applied")
     end
+
+    it "migrates candidate to renamed stage" do
+      subject.update_stage!(stage1, { name: "New Applied" })
+      expect(candidate.reload.stage.name).to eq("New Applied")
+      expect(candidate.pipeline_version).to eq(2)
+    end
+  end
+
+  describe "#reorder!" do
+    it "creates new version with reordered stages" do
+      stage_positions = [
+        { id: stage1.id, position: 1 },
+        { id: stage2.id, position: 0 }
+      ]
+      subject.reorder!(stage_positions)
+
+      expect(job.reload.pipeline_version).to eq(2)
+      ordered = job.current_stages.ordered
+      expect(ordered.first.name).to eq("Interview")
+      expect(ordered.last.name).to eq("Applied")
+    end
+
+    it "migrates candidates to corresponding stages in new version" do
+      stage_positions = [
+        { id: stage1.id, position: 1 },
+        { id: stage2.id, position: 0 }
+      ]
+      subject.reorder!(stage_positions)
+
+      expect(candidate.reload.pipeline_version).to eq(2)
+      expect(candidate.stage.name).to eq("Applied")
+    end
   end
 end

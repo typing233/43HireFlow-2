@@ -23,7 +23,7 @@ class Candidate < ApplicationRecord
   def move_to_stage!(new_stage, moved_by:)
     transaction do
       old_stage = stage
-      lock!
+      # Optimistic lock: update! will raise StaleObjectError if lock_version changed
       update!(stage: new_stage)
       ActivityLog.record!(
         team: team,

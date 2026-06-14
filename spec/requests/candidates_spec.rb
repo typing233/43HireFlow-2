@@ -44,11 +44,29 @@ RSpec.describe "Api::V1::Candidates", type: :request do
     let(:stage2) { create(:stage, job: job, name: "Interview", position: 1) }
     let(:candidate) { create(:candidate, job: job, team: team, stage: stage) }
 
-    it "moves candidate to new stage" do
+    it "moves candidate to new stage with correct lock_version" do
       patch "/api/v1/jobs/#{job.id}/candidates/#{candidate.id}/move_stage",
-            params: { team_id: team.id, stage_id: stage2.id }
+            params: { team_id: team.id, stage_id: stage2.id, lock_version: candidate.lock_version }
       expect(response).to have_http_status(:ok)
       expect(candidate.reload.stage).to eq(stage2)
+    end
+
+    it "returns 409 conflict with stale lock_version" do
+      patch "/api/v1/jobs/#{job.id}/candidates/#{candidate.id}/move_stage",
+            params: { team_id: team.id, stage_id: stage2.id, lock_version: candidate.lock_version + 99 }
+      expect(response).to have_http_status(:conflict)
+      json = JSON.parse(response.body)
+      expect(json["error"]).to eq("Conflict")
+      expect(candidate.reload.stage).to eq(stage)
+    end
+
+    it "returns 409 when concurrent update happens" do
+      # Simulate concurrent update
+      Candidate.find(candidate.id).update!(first_name: "ConcurrentChange")
+
+      patch "/api/v1/jobs/#{job.id}/candidates/#{candidate.id}/move_stage",
+            params: { team_id: team.id, stage_id: stage2.id, lock_version: candidate.lock_version }
+      expect(response).to have_http_status(:conflict)
     end
   end
 
@@ -56,10 +74,21 @@ RSpec.describe "Api::V1::Candidates", type: :request do
     let(:stage2) { create(:stage, job: job, name: "Interview", position: 1) }
     let!(:candidates) { create_list(:candidate, 3, job: job, team: team, stage: stage) }
 
-    it "queues batch move job" do
+    it "queues batch move job for valid candidates" do
       patch "/api/v1/jobs/#{job.id}/candidates/batch_move",
             params: { team_id: team.id, stage_id: stage2.id, candidate_ids: candidates.map(&:id) }
       expect(response).to have_http_status(:accepted)
+    end
+
+    it "rejects candidate IDs from other teams" do
+      other_team = create(:team)
+      other_job = create(:job, team: other_team)
+      other_stage = create(:stage, job: other_job)
+      other_candidate = create(:candidate, job: other_job, team: other_team, stage: other_stage)
+
+      patch "/api/v1/jobs/#{job.id}/candidates/batch_move",
+            params: { team_id: team.id, stage_id: stage2.id, candidate_ids: [other_candidate.id] }
+      expect(response).to have_http_status(:unprocessable_entity)
     end
   end
 

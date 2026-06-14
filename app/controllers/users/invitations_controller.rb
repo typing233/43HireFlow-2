@@ -16,8 +16,11 @@ module Users
       self.resource = accept_resource
 
       if resource.errors.empty?
+        ensure_team_membership!(resource)
+        sign_in(resource)
         render json: {
           user: UserCompactSerializer.new(resource).as_json,
+          teams: resource.teams.map { |t| TeamSerializer.new(t).as_json },
           message: "Invitation accepted successfully."
         }
       else
@@ -33,6 +36,25 @@ module Users
 
     def update_resource_params
       params.permit(:invitation_token, :password, :password_confirmation, :first_name, :last_name)
+    end
+
+    def ensure_team_membership!(user)
+      # The inviter already created a TeamMembership via TeamsController#invite_member.
+      # As a safety net, if the membership was somehow lost, recreate it using
+      # the stored invited_team_id.
+      return if user.team_memberships.exists?
+
+      team = Team.find_by(id: user.invited_team_id)
+      if team
+        TeamMembership.create!(user: user, team: team, role: "member")
+      else
+        # Fallback: use inviter's team
+        inviter = user.invited_by
+        return unless inviter.is_a?(User)
+        fallback_team = inviter.teams.first
+        return unless fallback_team
+        TeamMembership.create!(user: user, team: fallback_team, role: "member")
+      end
     end
   end
 end

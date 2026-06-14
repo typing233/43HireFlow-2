@@ -17,11 +17,12 @@ module Api
         @stage.position ||= @job.current_stages.maximum(:position).to_i + 1
 
         if has_candidates_in_pipeline?
-          PipelineUpgradeService.new(@job, current_user).add_stage!(@stage)
-          render json: @stage, serializer: StageSerializer, status: :created
+          service = PipelineUpgradeService.new(@job, current_user)
+          service.add_stage!(@stage)
+          render json: @job.reload.current_stages.ordered, each_serializer: StageSerializer, status: :created
         elsif @stage.save
           log_activity(@stage, "stage.created")
-          render json: @stage, serializer: StageSerializer, status: :created
+          render json: @job.current_stages.ordered, each_serializer: StageSerializer, status: :created
         else
           render_error @stage
         end
@@ -30,11 +31,12 @@ module Api
       def update
         authorize @stage
         if has_candidates_in_pipeline?
-          PipelineUpgradeService.new(@job, current_user).update_stage!(@stage, stage_params)
-          render json: @stage.reload, serializer: StageSerializer
+          service = PipelineUpgradeService.new(@job, current_user)
+          service.update_stage!(@stage, stage_params)
+          render json: @job.reload.current_stages.ordered, each_serializer: StageSerializer
         elsif @stage.update(stage_params)
           log_activity(@stage, "stage.updated")
-          render json: @stage, serializer: StageSerializer
+          render json: @job.current_stages.ordered, each_serializer: StageSerializer
         else
           render_error @stage
         end
@@ -46,7 +48,8 @@ module Api
           render_error "Cannot delete stage with active candidates", status: :unprocessable_entity
         else
           if has_candidates_in_pipeline?
-            PipelineUpgradeService.new(@job, current_user).remove_stage!(@stage)
+            service = PipelineUpgradeService.new(@job, current_user)
+            service.remove_stage!(@stage)
           else
             @stage.destroy!
           end
@@ -57,11 +60,19 @@ module Api
 
       def reorder
         authorize Stage, :reorder?
-        params[:stages].each do |stage_data|
-          stage = @job.current_stages.find(stage_data[:id])
-          stage.update!(position: stage_data[:position])
+
+        if has_candidates_in_pipeline?
+          stage_positions = params[:stages].map { |s| { id: s[:id], position: s[:position] } }
+          service = PipelineUpgradeService.new(@job, current_user)
+          service.reorder!(stage_positions)
+          render json: @job.reload.current_stages.ordered, each_serializer: StageSerializer
+        else
+          params[:stages].each do |stage_data|
+            stage = @job.current_stages.find(stage_data[:id])
+            stage.update!(position: stage_data[:position])
+          end
+          render json: @job.current_stages.reload.ordered, each_serializer: StageSerializer
         end
-        render json: @job.current_stages.ordered, each_serializer: StageSerializer
       end
 
       private

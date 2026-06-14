@@ -8,9 +8,18 @@ class User < ApplicationRecord
   has_many :created_jobs, class_name: "Job", foreign_key: :creator_id, dependent: :nullify
   has_many :notes, dependent: :nullify
   has_many :activity_logs, dependent: :nullify
+  belongs_to :invited_team, class_name: "Team", optional: true
 
-  validates :first_name, presence: true
-  validates :last_name, presence: true
+  validates :first_name, presence: true, unless: :created_by_invite?
+  validates :last_name, presence: true, unless: :created_by_invite?
+
+  private
+
+  def created_by_invite?
+    invitation_token.present? && !invitation_accepted_at.present?
+  end
+
+  public
 
   def full_name
     "#{first_name} #{last_name}"
