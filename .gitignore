@@ -1,0 +1,14 @@
+.env
+.env.local
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+/public/assets
+.byebug_history
+/coverage
+/node_modules
+/.bundle
+/vendor/bundle

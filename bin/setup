@@ -1,0 +1,44 @@
+#!/bin/bash
+set -e
+
+echo "=== HireFlow ATS Setup ==="
+
+# Copy env file
+if [ ! -f .env ]; then
+  cp .env.example .env
+  echo "Created .env from .env.example"
+fi
+
+echo "Starting Docker services..."
+docker compose up -d postgres redis
+
+echo "Waiting for PostgreSQL..."
+until docker compose exec postgres pg_isready -U postgres; do
+  sleep 1
+done
+
+echo "Installing dependencies..."
+bundle install
+
+echo "Creating database..."
+bundle exec rails db:create
+
+echo "Running migrations..."
+bundle exec rails db:migrate
+
+echo "Seeding database..."
+bundle exec rails db:seed
+
+echo ""
+echo "=== Setup complete! ==="
+echo ""
+echo "Start the application:"
+echo "  docker compose up        # All services"
+echo "  bundle exec rails s      # Rails only (requires local PG/Redis)"
+echo ""
+echo "Run tests:"
+echo "  bundle exec rspec"
+echo "  docker compose --profile test run test"
+echo ""
+echo "Sidekiq:"
+echo "  bundle exec sidekiq"
