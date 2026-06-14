@@ -60,6 +60,16 @@ RSpec.describe "Api::V1::Candidates", type: :request do
       expect(candidate.reload.stage).to eq(stage)
     end
 
+    it "returns 409 when lock_version is missing" do
+      patch "/api/v1/jobs/#{job.id}/candidates/#{candidate.id}/move_stage",
+            params: { team_id: team.id, stage_id: stage2.id }
+      expect(response).to have_http_status(:conflict)
+      json = JSON.parse(response.body)
+      expect(json["error"]).to eq("Conflict")
+      expect(json["message"]).to include("lock_version is required")
+      expect(candidate.reload.stage).to eq(stage)
+    end
+
     it "returns 409 when concurrent update happens" do
       # Simulate concurrent update
       Candidate.find(candidate.id).update!(first_name: "ConcurrentChange")

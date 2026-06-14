@@ -5,6 +5,7 @@ class PipelineUpgradeService
     @job = job
     @user = user
     @new_stages = []
+    @stage_id_mapping = {} # old_stage_id => new_stage_id
   end
 
   def add_stage!(new_stage)
@@ -15,6 +16,7 @@ class PipelineUpgradeService
         @new_stages << stage.dup.tap do |s|
           s.pipeline_version = new_version
           s.save!
+          @stage_id_mapping[stage.id] = s.id
         end
       end
 
@@ -38,6 +40,7 @@ class PipelineUpgradeService
         dup.assign_attributes(params) if s.id == stage.id
         dup.save!
         @new_stages << dup
+        @stage_id_mapping[s.id] = dup.id
       end
 
       @job.update!(pipeline_version: new_version)
@@ -54,6 +57,7 @@ class PipelineUpgradeService
         @new_stages << s.dup.tap do |dup|
           dup.pipeline_version = new_version
           dup.save!
+          @stage_id_mapping[s.id] = dup.id
         end
       end
 
@@ -77,6 +81,7 @@ class PipelineUpgradeService
         end
         dup.save!
         @new_stages << dup
+        @stage_id_mapping[s.id] = dup.id
       end
 
       @job.update!(pipeline_version: new_version)
@@ -88,17 +93,19 @@ class PipelineUpgradeService
   private
 
   def migrate_candidates!(new_version, removed_stage: nil)
-    new_version_stages = @job.stages.where(pipeline_version: new_version, active: true).order(:position)
+    fallback_stage = @job.stages.where(pipeline_version: new_version, active: true)
+                         .order(:position).first
 
     @job.candidates.find_each do |candidate|
       if removed_stage && candidate.stage_id == removed_stage.id
-        target = new_version_stages.first
+        target_id = fallback_stage.id
       else
-        old_stage = @job.stages.find_by(id: candidate.stage_id)
-        target = new_version_stages.find_by(name: old_stage&.name) || new_version_stages.first
+        # Use the explicit mapping: old stage → its corresponding new version stage
+        target_id = @stage_id_mapping[candidate.stage_id]
+        target_id ||= fallback_stage.id
       end
 
-      candidate.update_columns(stage_id: target.id, pipeline_version: new_version)
+      candidate.update_columns(stage_id: target_id, pipeline_version: new_version)
     end
   end
 

@@ -35,17 +35,17 @@ RSpec.describe "Team Invitations", type: :request do
   end
 
   describe "accepting an invitation" do
-    it "ensures team membership exists after acceptance" do
-      # Invite user
+    it "ensures team membership exists after acceptance with correct role" do
       post "/api/v1/teams/#{team.id}/invite_member",
            params: { team_id: team.id, email: "invited@example.com", role: "hiring_manager" }
 
       invited_user = User.find_by(email: "invited@example.com")
+      expect(invited_user.invited_team_id).to eq(team.id)
+      expect(invited_user.invited_role).to eq("hiring_manager")
       token = invited_user.raw_invitation_token
 
       sign_out admin
 
-      # Accept invitation
       put "/users/invitation",
           params: {
             invitation_token: token,
@@ -59,6 +59,32 @@ RSpec.describe "Team Invitations", type: :request do
       expect(invited_user.invitation_accepted_at).to be_present
       expect(invited_user.member_of?(team)).to be true
       expect(invited_user.role_in(team)).to eq("hiring_manager")
+    end
+
+    it "recreates membership with correct role if it was lost" do
+      post "/api/v1/teams/#{team.id}/invite_member",
+           params: { team_id: team.id, email: "lost@example.com", role: "recruiter" }
+
+      invited_user = User.find_by(email: "lost@example.com")
+      token = invited_user.raw_invitation_token
+
+      # Simulate lost membership
+      invited_user.team_memberships.destroy_all
+
+      sign_out admin
+
+      put "/users/invitation",
+          params: {
+            invitation_token: token,
+            password: "newpassword123",
+            password_confirmation: "newpassword123",
+            first_name: "Lost",
+            last_name: "User"
+          }
+
+      invited_user.reload
+      expect(invited_user.member_of?(team)).to be true
+      expect(invited_user.role_in(team)).to eq("recruiter")
     end
   end
 end

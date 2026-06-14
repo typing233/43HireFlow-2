@@ -39,22 +39,20 @@ module Users
     end
 
     def ensure_team_membership!(user)
-      # The inviter already created a TeamMembership via TeamsController#invite_member.
-      # As a safety net, if the membership was somehow lost, recreate it using
-      # the stored invited_team_id.
-      return if user.team_memberships.exists?
-
       team = Team.find_by(id: user.invited_team_id)
-      if team
-        TeamMembership.create!(user: user, team: team, role: "member")
-      else
-        # Fallback: use inviter's team
-        inviter = user.invited_by
-        return unless inviter.is_a?(User)
-        fallback_team = inviter.teams.first
-        return unless fallback_team
-        TeamMembership.create!(user: user, team: fallback_team, role: "member")
+      return unless team
+
+      role = user.invited_role || "member"
+
+      existing = user.team_memberships.find_by(team: team)
+      if existing
+        # Membership exists (created at invite time) — ensure role matches
+        existing.update!(role: role) unless existing.role == role
+        return
       end
+
+      # Membership was lost — recreate with the originally assigned role
+      TeamMembership.create!(user: user, team: team, role: role)
     end
   end
 end

@@ -2,13 +2,13 @@ class BatchMoveCandidatesJob < ApplicationJob
   queue_as :default
 
   def perform(candidate_ids:, stage_id:, moved_by_id:, team_id:, job_id:)
-    stage = Stage.find(stage_id)
     user = User.find(moved_by_id)
     team = Team.find(team_id)
-    job = Job.find(job_id)
+    job = team.jobs.find(job_id)
+    # Ensure stage belongs to this job — raises RecordNotFound otherwise
+    stage = job.stages.find(stage_id)
     failed = []
 
-    # Re-validate: only move candidates that belong to this team AND this job
     safe_candidates = job.candidates.where(team: team, id: candidate_ids)
 
     safe_candidates.find_each do |candidate|

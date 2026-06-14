@@ -30,7 +30,7 @@ module Api
             render_error membership
           end
         else
-          invited_user = User.invite!({ email: email, invited_team_id: @current_team.id }, current_user)
+          invited_user = User.invite!({ email: email, invited_team_id: @current_team.id, invited_role: role }, current_user)
           @current_team.team_memberships.create!(user: invited_user, role: role)
           render json: { message: "Invitation sent" }, status: :created
         end

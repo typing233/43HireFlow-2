@@ -51,7 +51,17 @@ module Api
       def move_stage
         authorize @candidate, :move_stage?
         new_stage = @job.current_stages.find(params[:stage_id])
-        expected_lock_version = params[:lock_version].to_i
+
+        unless params.key?(:lock_version)
+          render json: {
+            error: "Conflict",
+            message: "lock_version is required. Provide the candidate's current lock_version.",
+            current_lock_version: @candidate.lock_version
+          }, status: :conflict
+          return
+        end
+
+        expected_lock_version = Integer(params[:lock_version])
 
         if @candidate.lock_version != expected_lock_version
           render json: {
